@@ -16,7 +16,7 @@ import anthropic
 
 from . import history, x_client
 from .generator import GenerationError, generate
-from .tweet_text import MAX_WEIGHTED_LENGTH, Aruaru
+from .tweet_text import MAX_WEIGHTED_LENGTH, TIMELINE_SOFT_LIMIT, Aruaru
 
 JST = timezone(timedelta(hours=9))
 
@@ -49,10 +49,13 @@ def _report(aruaru: Aruaru, *, dry_run: bool) -> None:
     print(f"===== {label} =====")
     print(text)
     print("=" * 32)
+    length = aruaru.weighted_length
+    note = "" if length <= TIMELINE_SOFT_LIMIT else "  ※タイムラインで折りたたまれます"
     print(
-        f"X 文字数: {aruaru.weighted_length}/{MAX_WEIGHTED_LENGTH} "
-        f"(実文字数 {len(text)}、{len(aruaru.lines)} 行)"
+        f"X 文字数(重み付き): {length}  "
+        f"[折りたたみの目安 {TIMELINE_SOFT_LIMIT} / 投稿上限 {MAX_WEIGHTED_LENGTH}]{note}"
     )
+    print(f"実文字数: {len(text)}、{len(aruaru.lines)} 行")
 
 
 def main(argv: list[str] | None = None) -> int:

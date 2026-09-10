@@ -1,8 +1,8 @@
 """X (Twitter) の重み付き文字数カウントと、投稿テキストの組み立て。
 
 X の文字数は「重み付き文字数」で数える (twitter-text config v3)。
-ASCII などは 1 文字ぶん、日本語などは 2 文字ぶんとして扱われ、
-上限は 280。つまり日本語だけなら実質 140 文字が上限になる。
+ASCII などは 1 文字ぶん、日本語などは 2 文字ぶんとして扱われる。
+つまり日本語だけなら、上限の数字の半分が実際に書ける文字数になる。
 """
 
 from __future__ import annotations
@@ -10,8 +10,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+# 投稿の上限 (重み付き)。X Premium の長文投稿ぶんを見込んで 25000。
+# Premium でないアカウントに切り替える場合は 280 に戻すこと。
+MAX_WEIGHTED_LENGTH = 25000
+
+# タイムライン上でこれを超えると「もっと見る」で折りたたまれる。
+# オチが隠れるとネタとして成立しないので、生成時はこの範囲を目安にする
+# (日本語 160 文字ぶん)。上限ではなく目安なので、超えても投稿はできる。
+TIMELINE_SOFT_LIMIT = 320
+
 # twitter-text configuration v3
-MAX_WEIGHTED_LENGTH = 280
 SCALE = 100
 DEFAULT_WEIGHT = 200
 TRANSFORMED_URL_LENGTH = 23

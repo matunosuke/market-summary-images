@@ -3,7 +3,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from aruaru.tweet_text import Aruaru, Line, fits_in_tweet, weighted_length
+from aruaru.tweet_text import (
+    MAX_WEIGHTED_LENGTH,
+    TIMELINE_SOFT_LIMIT,
+    Aruaru,
+    Line,
+    fits_in_tweet,
+    weighted_length,
+)
 
 
 def test_ascii_counts_one_each():
@@ -22,9 +29,15 @@ def test_url_counts_as_23():
     assert weighted_length("https://example.com/a/very/long/path/indeed") == 23
 
 
-def test_140_japanese_chars_is_the_limit():
-    assert fits_in_tweet("あ" * 140)
-    assert not fits_in_tweet("あ" * 141)
+def test_premium_limit_allows_long_posts():
+    # X Premium 前提。お手本(実文字数 155)は当然おさまる
+    assert fits_in_tweet("あ" * 155)
+    assert fits_in_tweet("あ" * (MAX_WEIGHTED_LENGTH // 2))
+    assert not fits_in_tweet("あ" * (MAX_WEIGHTED_LENGTH // 2 + 1))
+
+
+def test_soft_limit_is_about_160_japanese_chars():
+    assert weighted_length("あ" * 160) == TIMELINE_SOFT_LIMIT
 
 
 def test_render_matches_expected_format():

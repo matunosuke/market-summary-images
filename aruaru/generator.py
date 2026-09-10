@@ -7,7 +7,7 @@ import logging
 
 import anthropic
 
-from .tweet_text import MAX_WEIGHTED_LENGTH, Aruaru
+from .tweet_text import MAX_WEIGHTED_LENGTH, TIMELINE_SOFT_LIMIT, Aruaru
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,9 @@ MODEL = "claude-opus-5"
 MAX_TOKENS = 16000
 MAX_ATTEMPTS = 4
 
-# 日本語 1 文字 = 2 の重みなので、280 の上限は日本語 140 文字ぶん。
-# 改行や記号ぶんの余裕を見て、モデルには 130 文字を目安に指示する。
-TARGET_JP_CHARS = 130
+# 日本語 1 文字 = 2 の重みなので、TIMELINE_SOFT_LIMIT は日本語 160 文字ぶん。
+# 改行ぶんの余裕を見て、モデルには 150 文字を目安に指示する。
+TARGET_JP_CHARS = 150
 
 SYSTEM_PROMPT = f"""\
 あなたは日本のソフトウェア開発現場を知り尽くした放送作家です。
@@ -31,7 +31,7 @@ X (旧 Twitter) に毎朝投稿する「エンジニアあるある」の会話�
 - 最後の 1 行が必ずオチになるようにする。技術的に「あー、それはそうなるよね」と現場の人間が頷く落とし方にすること。
 
 ## 制約
-- タイトルと本文を合わせて、日本語 {TARGET_JP_CHARS} 文字以内に必ず収めること。X の 280 文字制限があるため、超えると投稿できません。
+- タイトルと本文を合わせて、日本語 {TARGET_JP_CHARS} 文字以内に収めること。これを超えるとタイムライン上で折りたたまれ、オチが読まれなくなります。
 - 絵文字、ハッシュタグ、URL、記号の装飾は一切使わない。
 - セリフの中に鉤括弧「」を入れない (出力時に括弧で囲うため)。
 - 実在の企業名、製品名、個人名は出さない。
@@ -102,6 +102,7 @@ def generate(
         {"role": "user", "content": _build_user_message(recent_titles or [])}
     ]
     last_error: str | None = None
+    best_effort: Aruaru | None = None
 
     for attempt in range(1, max_attempts + 1):
         response = client.messages.create(
@@ -129,22 +130,31 @@ def generate(
             logger.warning("試行 %d: %s", attempt, last_error)
         else:
             length = aruaru.weighted_length
-            if length <= MAX_WEIGHTED_LENGTH:
-                logger.info(
-                    "試行 %d で生成成功 (重み付き %d/%d)", attempt, length, MAX_WEIGHTED_LENGTH
-                )
+            if length <= TIMELINE_SOFT_LIMIT:
+                logger.info("試行 %d で生成成功 (重み付き %d)", attempt, length)
                 return aruaru
-            over = length - MAX_WEIGHTED_LENGTH
+
+            over = length - TIMELINE_SOFT_LIMIT
             last_error = (
-                f"X の上限を超えています (重み付き {length}/{MAX_WEIGHTED_LENGTH})。"
+                f"長すぎます (重み付き {length}、目安 {TIMELINE_SOFT_LIMIT})。"
                 f"日本語で約 {(over + 1) // 2} 文字ぶん削ってください。"
             )
             logger.warning("試行 %d: %s", attempt, last_error)
+
+            # 目安は超えたが投稿はできる。最後の試行なら、捨てずにこれを使う。
+            if attempt == max_attempts and length <= MAX_WEIGHTED_LENGTH:
+                logger.warning("目安は超えましたが、投稿可能なのでこれを採用します")
+                return aruaru
+            best_effort = aruaru
 
         if attempt < max_attempts:
             messages.append({"role": "assistant", "content": raw or "(空の応答)"})
             messages.append(
                 {"role": "user", "content": f"{last_error}\nもう一度、作り直してください。"}
             )
+
+    if best_effort is not None and best_effort.weighted_length <= MAX_WEIGHTED_LENGTH:
+        logger.warning("目安に収まりませんでしたが、投稿可能なものを採用します")
+        return best_effort
 
     raise GenerationError(f"{max_attempts} 回試しましたが生成できませんでした: {last_error}")
